@@ -165,7 +165,7 @@ struct ParameterRowDisplay engineMix3ParameterRow = {
 };
 
 
-const char* fxName []=  { "Off ", "Mix ", "LP  ", "HP  ", "Bass", "BP  ", "Crsh" } ;
+const char* fxName []=  { "Off ", "Mix ", "LP  ", "HP  ", "Bass", "BP  ", "Crsh" , "LP2 ", "HP2 ", "BP2 ", "Lp3 ", "Hp3 ", "Bp3 ", "Peak", "Notc", "Bell", "LpHp", "BpDs", "LPws", "Tilt", "Pann", "Sat ", "Sigm", "Fold", "Wrap", "Xor ", "Txr1", "Txr2", "LPx1", "LPx2"} ;
 
 struct ParameterRowDisplay effectParameterRow = {
         "Filter" ,
@@ -186,6 +186,29 @@ struct FilterRowDisplay filterRowDisplay[FILTER_LAST] = {
         { "LoFr", "Boos", "Gain" },
         { "Freq", "Q   ", "Gain" },
         { "Samp", "Bits", "Gain" },
+        { "Freq", "Res ", "Gain" },
+        { "Freq", "Res ", "Gain" },
+        { "Freq", "Q   ", "Gain" },
+        { "Freq", "Res ", "Gain" },
+        { "Freq", "Res ", "Gain" },
+        { "Freq", "Res ", "Gain" },
+        { "Freq", "Res ", "Gain" },
+        { "Freq", "Res ", "Gain" },
+        { "Freq", "Amp ", "Gain" },
+        { "Freq", "Res ", "Gain" },        
+        { "Freq", "Res ", "Gain" },
+        { "Freq", "Mix ", "Gain" },
+        { "Freq", "Mod ", "Gain" },
+        { "Pos ", "Wide", "Gain" },
+        { "Thrs", "Tone ", "Gain" },
+        { "Driv", "Tone ", "Gain" },
+        { "Driv", "Freq ", "Gain" },
+        { "Driv", "Freq", "Gain" },
+        { "Thrs", "Freq ", "Gain" },
+        { "Freq", "Res ", "Gain" },
+        { "Freq", "Res ", "Gain" },
+        { "Freq", "Mix ", "Gain" },
+        { "Freq", "Mix ", "Gain" }
 };
 
 
@@ -1159,7 +1182,7 @@ void SynthState::setScalaEnable(bool enable) {
 
 void SynthState::setScalaScale(int scaleNumber) {
     fullState.scalaScaleConfig.scalaFile = storage->getScalaFile()->getFile(scaleNumber);
-    
+
     if (fullState.scalaScaleConfig.scalaFile->fileType != FILE_EMPTY && fullState.scalaScaleConfig.scalaEnabled) {
         storage->getScalaFile()->loadScalaScale(&fullState.scalaScaleConfig);
     }
