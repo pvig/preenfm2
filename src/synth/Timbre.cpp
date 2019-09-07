@@ -112,16 +112,9 @@ inline static int __canTranspose( int _direction ) {
 
 #define LP2OFFSET -0.045f
 
-inline
-double exp1(double x) {
-	//fast exp
-  x = 1.0f + x / 256.0f;
-  x *= x; x *= x; x *= x; x *= x;
-  x *= x; x *= x; x *= x; x *= x;
-  return x;
-}
 inline 
 float expf_fast(float a) {
+  //https://github.com/ekmett/approximate/blob/master/cbits/fast.c
   union { float f; int x; } u;
   u.x = (int) (12102203 * a + 1064866805);
   return u.f;
@@ -139,14 +132,13 @@ float sqrt3(const float x)
   u.i = (1 << 29) + (u.i >> 1) - (1 << 22);
   return u.x;
 } 
-/* single precision absolute value, a lot faster than fabsf() (if you use MSVC++ 6 Standard - others' implementations might be less slow) */
 inline
 float sabs(float a)
 {
+	//https://www.musicdsp.org/en/latest/Other/178-reasonably-accurate-fastish-tanh-approximation.html
 	const int b = (*((int *)(&a))) & 0x7FFFFFFF;
 	return *((float *)(&b));
 }
-/* approximates tanh(x/2) rather than tanh(x) - depending on how you're using this, fixing that could well be wasting a multiplication (though that isn't much, and it could be done with an integer addition in sabs instead)  */
 inline
 float tanh2(float x)
 {
@@ -156,46 +148,19 @@ inline
 float sat25(float x)
 { 
 	return x * (1.f - sabs(x * 0.25f));
-	// x * (1 - sabs(x * 0.25))
-	/*float sss = sabs(x * 0.25);
-	if (sss > 0.5) {
-		return x < 0 ? -1 : 1;
-	}
-	return x * (1 - sss);*/
-}
-inline 
-float sigmoidPos(float x)
-{
-	return tanh2((2 * x - 1) * 2.5) * 0.5 + 0.5;
 }
 inline
 float sat33(float x)
 {
-	return x * (1 - (x * x * 0.125f));
-	/*float xsq = x * x;
-	if (xsq > 1)
-		return x < 0 ? -1 : 1;
-	else
-		return x * (1 - (xsq * 0.125));*/
+	if (unlikely(fabs(x) > 2.58f))
+		return 0;
+	return x * (1 - x * x * 0.15f);
 }
 //https://www.musicdsp.org/en/latest/Other/120-saturation.html
 inline
 float sigmoid(float x)
 {
 	return x * (1.5f - 0.5f * x * x);
-	/*
-	if (sabs(x) < 1)
-		return x * (1.5f - 0.5f * x * x);
-	else
-		return x > 0.f ? 1.f : -1.f;*/
-}
-inline
-float sigmoid2(float x)
-{
-    if(sabs(x)<1.2f)
-		return x * (1.5f - 0.5f * x * x);
-	else
-        return x > 0.f ? 0.936f : -0.936f;
 }
 float fold(float x) {
 	return (sabs(x + 0.25 - (int)(x + 0.25)) - 0.25);
@@ -1033,19 +998,19 @@ case FILTER_LP2:
     	for (int k=BLOCK_SIZE ; k--; ) {
 
 			// Left voice
-			localv0L = pattern * localv0L - f * sat33(localv1L + (*sp));
+			localv0L = pattern * localv0L - f * sat33(localv1L + *sp);
 			localv1L = pattern * localv1L + f * localv0L;
 
-			localv0L = pattern * localv0L - f * (localv1L + (*sp));
+			localv0L = pattern * localv0L - f * (localv1L + *sp);
 			localv1L = pattern * localv1L + f * localv0L;
 
 			*sp++ = clamp(localv1L * mixerGain, -ratioTimbres, ratioTimbres);
 
 			// Right voice
-			localv0R = pattern * localv0R - f * sat33(localv1R + (*sp));
+			localv0R = pattern * localv0R - f * sat33(localv1R + *sp);
 			localv1R = pattern * localv1R + f * localv0R;
 
-			localv0R = pattern * localv0R - f * (localv1R + (*sp));
+			localv0R = pattern * localv0R - f * (localv1R + *sp);
 			localv1R = pattern * localv1R + f * localv0R;
 
 			*sp++ = clamp(localv1R * mixerGain, -ratioTimbres, ratioTimbres);
@@ -1076,19 +1041,19 @@ case FILTER_HP2:
         for (int k=0 ; k < BLOCK_SIZE ; k++) {
 
 			// Left voice
-			localv0L = pattern * localv0L + (f * sat33(-localv1L + (*sp)));
+			localv0L = pattern * localv0L + f * sat33(-localv1L + *sp);
 			localv1L = pattern * localv1L + f * localv0L;
 
-			localv0L = pattern * localv0L + (f * (-localv1L + (*sp)));
+			localv0L = pattern * localv0L + f * (-localv1L + *sp);
 			localv1L = pattern * localv1L + f * localv0L;
 
 			*sp++ = clamp((*sp - localv1L) * mixerGain, -ratioTimbres, ratioTimbres);
 
 			// Right voice
-			localv0R = pattern * localv0R + (f * sat33(-localv1R + (*sp)));
+			localv0R = pattern * localv0R + f * sat33(-localv1R + *sp);
 			localv1R = pattern * localv1R + f * localv0R;
 
-			localv0R = pattern * localv0R + (f * (-localv1R + (*sp)));
+			localv0R = pattern * localv0R + f * (-localv1R + *sp);
 			localv1R = pattern * localv1R + f * localv0R;
 
 			*sp++ = clamp((*sp - localv1R) * mixerGain, -ratioTimbres, ratioTimbres);
@@ -1805,11 +1770,11 @@ case FILTER_SIGMOID:
 		for (int k=BLOCK_SIZE ; k--; ) {
 
 			// Left voice
-			localv0L = ((sat25(bias + (*sp) * gain) * gainCorrection) * b) + (localv0L * a);
+			localv0L = ((tanh2(bias + (*sp) * gain) * gainCorrection) * b) + (localv0L * a);
 			*sp++ = clamp((*sp - localv0L) * mixerGain, -ratioTimbres, ratioTimbres);
 
 			// Right voice
-			localv0R = ((sat25(bias + (*sp) * gain) * gainCorrection) * b) + (localv0R * a);
+			localv0R = ((tanh2(bias + (*sp) * gain) * gainCorrection) * b) + (localv0R * a);
 			*sp++ = clamp((*sp - localv0R) * mixerGain, -ratioTimbres, ratioTimbres);
 		}
 
@@ -1830,25 +1795,33 @@ case FILTER_FOLD:
 		float *sp = this->sampleBlock;
 		float localv0L = v0L;
 		float localv0R = v0R;
+		float localv1L = v1L;
+		float localv1R = v1R;
 
-		const float drive = sqrt3(fxParam1);
-		const float gain = (1 + 52 * (drive)) * 0.25f;
-		const float finalGain = (1 - (drive / (drive + 0.05f)) * 0.6f) * mixerGain;
+		float f = fxParam2 * fxParam2 + 0.1f;
+		float f4 = f * 4;
+		float pattern = (1 - 0.6f * f);
 
-		const float a = 0.95f - fxParam2 * 0.599999f;
-		const float b = 1.f - a;
+		float drive = sqrt3(fxParam1);
+		float gain = (1 + 52 * (drive)) * 0.25f;
+		float finalGain = (1 - (drive / (drive + 0.05f)) * 0.6f) * mixerGain;
 
 		for (int k=BLOCK_SIZE ; k--; ) {
 			//LEFT
-			localv0L = (fold(*sp * gain) * b) + (localv0L * a);
-			*sp++ = clamp(localv0L * finalGain, -ratioTimbres, ratioTimbres);
+			localv0L = pattern * localv0L - f * localv1L + f4 * fold(*sp * gain);
+			localv1L = pattern * localv1L + f * localv0L;
+			*sp++ = clamp(localv1L * finalGain, -ratioTimbres, ratioTimbres);
+
 			//RIGHT
-			localv0R = (fold(*sp * gain) * b) + (localv0R * a);
+			localv0R = pattern * localv0R - f * localv1R + f4 * fold(*sp * gain);
+			localv1R = pattern * localv1R + f * localv0R;
 			*sp++ = clamp(localv0R * finalGain, -ratioTimbres, ratioTimbres);
 		}
 
         v0L = localv0L;
         v0R = localv0R;
+		v1L = localv1L;	
+        v1R = localv1R;
 	}
 	break;
 case FILTER_WRAP:
@@ -2316,11 +2289,8 @@ void Timbre::setNewEffecParam(int encoder) {
     		break;
     	case FILTER_HP:
     	case FILTER_LP:
-        case FILTER_LP2:
-        case FILTER_HP2:
         case FILTER_TILT:
 		case FILTER_STEREO:
-		case FILTER_LPHP:
     		switch (encoder) {
     		case ENCODER_EFFECT_TYPE:
     			fxParam2 = 0.3f - params.effect.param2 * 0.3f;
@@ -2333,6 +2303,18 @@ void Timbre::setNewEffecParam(int encoder) {
     	    	// fxParam2 = pow(0.5, ((params.effect.param2 * 127)+24) / 16.0);
     			// => value from 0.35 to 0.0
     			fxParam2 = 0.27f - params.effect.param2 * 0.27f;
+    			break;
+    		}
+        	break;
+        case FILTER_LP2:
+        case FILTER_HP2:
+		case FILTER_LPHP:
+		    switch (encoder) {
+    		case ENCODER_EFFECT_TYPE:
+    			fxParam2 = 0.27f - params.effect.param2 * 0.267f;
+    			break;
+    		case ENCODER_EFFECT_PARAM2:
+    			fxParam2 = 0.27f - params.effect.param2 * 0.267f;
     			break;
     		}
         	break;
