@@ -136,26 +136,19 @@ float sqrt3(const float x)
   return u.x;
 } 
 inline
-float sabs(float a)
-{
-	//https://www.musicdsp.org/en/latest/Other/178-reasonably-accurate-fastish-tanh-approximation.html
-	const int b = (*((int *)(&a))) & 0x7FFFFFFF;
-	return *((float *)(&b));
-}
-inline
 float tanh2(float x)
 {
-	return x / (sabs(x) + 3.f / (2.f + x * x));
+	return x / (fabsf(x) + 3.f / (2.f + x * x));
 }
 inline
 float sat25(float x)
 { 
-	return x * (1.f - sabs(x * 0.25f));
+	return x * (1.f - fabsf(x * 0.25f));
 }
 inline
 float sat33(float x)
 {
-	if (unlikely(fabs(x) > 2.58f))
+	if (unlikely(fabsf(x) > 2.58f))
 		return 0;
 	return x * (1 - x * x * 0.15f);
 }
@@ -165,10 +158,9 @@ float clamp(float d, float min, float max) {
   return unlikely(t > max) ? max : t;
 }
 inline 
-float satSin(float x, float drive, int pos) {
+float satSin(float x, float drive, uint_fast16_t pos) {
 	//https://www.desmos.com/calculator/pdsqpi5lp6
-	int xabs = (int)(sabs(x));
-	return x + clamp(x, -0.5f * drive, drive) * sinTable[(xabs * 1303 + pos) & 0x3FF];
+	return x + clamp(x, -0.5f * drive, drive) * sinTable[((uint_fast16_t)(fabsf(x) * 360) + pos) & 0x3FF];
 }
 //https://www.musicdsp.org/en/latest/Other/120-saturation.html
 inline
@@ -179,11 +171,23 @@ float sigmoid(float x)
 float fold(float x4) {
 	// https://www.desmos.com/calculator/ge2wvg2wgj
 	// x4 = x / 4
-	return (sabs(x4 + 0.25f - roundf(x4 + 0.25f)) - 0.25f);
+	return (fabsf(x4 + 0.25f - roundf(x4 + 0.25f)) - 0.25f);
 }
 inline
 float wrap(float x) {
-	return x - roundf(x);
+	return x - floorf(x);
+}
+inline 
+float window(float x) {
+	if (x < 0 || x > 1) {
+		return 0;
+	} else if (x < 0.2f) {
+		return sqrt3( x * 5 );
+	} else if (x > 0.8f) {
+		return sqrt3(1 - (x-0.8f) * 5);
+	} else {
+		return 1;
+	}
 }
 
 enum NewNoteType {
@@ -273,7 +277,7 @@ Timbre::Timbre() {
 
 
     // Init FX variables
-    v0L = v1L = v0R = v1R = 0.0f;
+    v0L = v1L = v2L = v3L = v4L = v5L = v0R = v1R = v2R = v3R = v4R = v5R = 0.0f;
     fxParam1PlusMatrix = -1.0;
 }
 
@@ -1631,6 +1635,9 @@ case FILTER_TILT:
 		// Low pass... on the Frequency
 		fxParam1 = clamp((fxParamTmp + 9.0f * fxParam1) * .1f, 0, 1);
 
+		const float f1 = clamp((fxParam1), 0.001f, 1); // allpass F
+		float coef1 = (1.0f - f1) / (1.0f + f1);
+
 		const float res = 0.85f;
 
 		const float amp = 19.93f;
@@ -1655,14 +1662,24 @@ case FILTER_TILT:
 		float localv1L = v1L;
 		float localv1R = v1R;
 
+		float _ly1L = v2L, _ly1R = v2R;
+		float _ly2L = v3L, _ly2R = v3R;
+		float _lx1L = v4L, _lx1R = v4R;
+
 		for (int k=BLOCK_SIZE ; k--; ) {
 			// Left voice
-			localv0L = res * localv0L - (fxParam1) * localv1L + sigmoid(*sp);
+			_ly1L = coef1 * (_ly1L + *sp) - _lx1L; // allpass
+			_lx1L = *sp;
+
+			localv0L = res * localv0L - (fxParam1) * localv1L + sigmoid(_ly1L);
 			localv1L = res * localv1L + (fxParam1) * localv0L;
 			*sp++ = clamp((*sp + lgain * (localv1L) + hgain * (*sp - localv1L)) * mixerGain, -ratioTimbres, ratioTimbres);
 
 			// Right voice
-			localv0R = res * localv0R - (fxParam1) * localv1R + sigmoid(*sp);
+			_ly1R = coef1 * (_ly1R + *sp) - _lx1R; // allpass
+			_lx1R = *sp;
+
+			localv0R = res * localv0R - (fxParam1) * localv1R + sigmoid(_ly1R);
 			localv1R = res * localv1R + (fxParam1) * localv0R;
 			*sp++ = clamp((*sp + lgain * (localv1R) + hgain * (*sp - localv1R)) * mixerGain, -ratioTimbres, ratioTimbres);
 		}
@@ -1671,54 +1688,79 @@ case FILTER_TILT:
         v0R = localv0R;
         v1L = localv1L;
         v1R = localv1R;
+
+		v2L = _ly1L; v2R = _ly1R;
+		v3L = _ly2L; v3R = _ly2R;
+		v4L = _lx1L; v4R = _lx1R;
+
     }
     break;
 case FILTER_STEREO:
-	{
-		float fxParamTmp = params.effect.param1 + matrixFilterFrequency;
-		fxParamTmp *= fxParamTmp;
+{
+	float fxParamTmp = fabsf(params.effect.param1 + matrixFilterFrequency);
+	fxParam1 = ((fxParamTmp + 19.0f * fxParam1) * .05f);
 
-		// Low pass... on the Frequency
-		fxParam1 = clamp((fxParamTmp + 9.0f * fxParam1) * .1f, 0, 1);
+	float OffsetTmp = fabsf(params.effect.param2);
+	fxParam2 = ((OffsetTmp + 19.0f * fxParam2) * .05f);
 
-		//float pos = (params.effect.param1 * 2) -1;
-		float pos;
-        if(fxParam1 > 0.5f) {
-            pos = ((1 - panTable[127 - (int)(fxParam1 * 127)]) * 2) - 1;
-        } else {
-            pos = (panTable[(int)(fxParam1 * 127)] * 2) - 1;
-        }
-		float *sp = this->sampleBlock;
-		float localv0L = v0L;
-		float localv0R = v0R;
-		float out = 0;
-		float outL, outR, m, s;
+	const float offset = fxParam2 * 0.66f - 0.33f;
 
-		const float coef_S = params.effect.param2 * 0.5f;
+	const float f1 = clamp((fxParam1), 0.001f, 0.99f) * 1.8f - 0.9f;
+	const float f2 = clamp((fxParam1 + offset), 0.001f, 0.99f) * 1.8f - 0.9f;
+	const float f3 = clamp((fxParam1 + offset * 2), 0.001f, 0.99f) * 1.8f - 0.9f;;
 
-		for (int k=BLOCK_SIZE ; k--; ) {
-			// Left voice
-			out = localv0L + pos * (*sp);
-			localv0L = (*sp) - pos * out;
-			outL = out * mixerGain;
+	float *sp = this->sampleBlock;
+	float lowL = v0L, highL = 0, bandL = v1L;
+	float lowR = v0R, highR = 0, bandR = v1R;
+	float lowL2 = v2L, highL2 = 0, bandL2 = v3L;
+	float lowR2 = v2R, highR2 = 0, bandR2 = v3R;
+	float lowL3 = v4L, highL3 = 0, bandL3 = v5L;
+	float lowR3 = v4R, highR3 = 0, bandR3 = v5R;
+	float out;
 
-			sp++;
-			// Right voice
-			out = localv0R - pos * (*sp);
-			localv0R = (*sp) + pos * out;
-			outR = out * mixerGain;
+	for (int k = BLOCK_SIZE ; k--; ) {
+		// Left voice
+		
+		lowL = (*sp) + f1 * (bandL = lowL - f1 * (*sp));
+		highL = (bandL + (*sp)) * 0.5f;
 
-			//stereo position :
-			m = (outL + outR) * 0.5f;
-			s = (outR - outL) * coef_S;
-			sp -= 1;
-			*sp++ = clamp(m - s, -ratioTimbres, ratioTimbres);
-			*sp++ = clamp(m + s, -ratioTimbres, ratioTimbres);
-		}
-        v0L = localv0L;
-        v0R = localv0R;
+		lowL2 = highL + f2 * (bandL2 = (lowL2) - f2 * lowL);
+		highL2 = ((bandL2) + highL) * 0.5f;
+
+		lowL3 = lowL2 + f3 * (bandL3 = lowL3 - f3 * lowL2);
+		highL3 = (bandL3 + highL2) * 0.5f;
+
+		*sp++ = clamp(highL3 * mixerGain, -ratioTimbres, ratioTimbres);
+
+		// Right voice
+		lowR = (*sp) + f1 * (bandR = lowR - f1 * (*sp));
+		highR = (bandR + (*sp)) * 0.5f;
+
+		lowR2 = lowR + f2 * (bandR2 = (lowR2) - f2 * lowR);
+		highR2 = ((bandR2) + highR) * 0.5f;
+
+		lowR3 = lowR2 + f3 * (bandR3 = lowR3 - f3 * lowR2);
+		highR3 = (bandR3 + highR2) * 0.5f;
+
+		*sp++ = clamp(highR3 * mixerGain, -ratioTimbres, ratioTimbres);
 	}
-	break;
+
+	v0L = lowL;
+	v1L = bandL;
+	v0R = lowR;
+	v1R = bandR;
+
+	v2L = lowL2;
+	v3L = bandL2;
+	v2R = lowR2;
+	v3R = bandR2;
+
+	v4L = lowL3;
+	v5L = bandL3;
+	v4R = lowR3;
+	v5R = bandR3;
+}
+break;
 case FILTER_SAT:
 	{
 		float fxParamTmp = params.effect.param1 + matrixFilterFrequency;
@@ -1727,7 +1769,11 @@ case FILTER_SAT:
 		// Low pass... on the Frequency
 		fxParam1 = clamp((fxParamTmp + 9.0f * fxParam1) * .1f, 0, 1);
 
+		const float f1 = clamp((fxParam1), 0.001f, 1); // allpass F
+		float coef1 = (1.0f - f1) / (1.0f + f1);
+
 		float *sp = this->sampleBlock;
+
 		float localv0L = v0L;
 		float localv0R = v0R;
 
@@ -1741,7 +1787,7 @@ case FILTER_SAT:
 		for (int k=BLOCK_SIZE ; k--; ) {
 			//LEFT
 			localv0L = sigmoid(*sp);
-			if(sabs(localv0L) > threshold) {
+			if(fabsf(localv0L) > threshold) {
 				localv0L = localv0L > 1 ? thresTop : localv0L * invT;
 			}
 			localv0L = (*sp * b) + (localv0L * a);
@@ -1749,7 +1795,7 @@ case FILTER_SAT:
 
 			//RIGHT
 			localv0R = sigmoid(*sp);
-			if(sabs(localv0R) > threshold) {
+			if(fabsf(localv0R) > threshold) {
 				localv0R = localv0R > 1 ? thresTop : localv0R * invT;
 			}
 			localv0R = (*sp * b) + (localv0R * a);
@@ -1912,7 +1958,7 @@ case FILTER_XOR:
 
 		for (int k=BLOCK_SIZE ; k--; ) {
 
-				if(sabs(*sp) > threshold) {
+				if(fabsf(*sp) > threshold) {
 					localv0L = (*sp) - pos * (localv0L + pos * (*sp));
 					digitsA = FLOAT2SHORT * (*sp);
 					digitsB = FLOAT2SHORT * localv0L;
@@ -1924,7 +1970,7 @@ case FILTER_XOR:
 				localv0L = (*sp * b) + (localv0L * a);
 				*sp++ = clamp(localv0L * mixerGain, -ratioTimbres, ratioTimbres);
 
-				if(sabs(*sp) > threshold) {
+				if(fabsf(*sp) > threshold) {
 					localv0R = (*sp) - pos * (localv0R + pos * (*sp));
 					digitsA = FLOAT2SHORT * (*sp);
 					digitsB = FLOAT2SHORT * localv0R;
@@ -1942,56 +1988,72 @@ case FILTER_XOR:
 	}
 	break;
 case FILTER_TEXTURE1:
-		{
-			float fxParamTmp = (params.effect.param1 + matrixFilterFrequency);
-			fxParamTmp *= fxParamTmp;
+	{
+		float fxParamTmp = (params.effect.param1 + matrixFilterFrequency);
+		fxParamTmp *= fxParamTmp;
 
-			// Low pass... on the Frequency
-			fxParam1 = clamp((fxParamTmp + 9.0f * fxParam1) * .1f, 0, 1);
+		const uint_fast8_t random = (*(uint_fast8_t *)noise) & 0xff;
+		if (random > 252) {
+			fxParam1 += ((random & 1) * 0.007874015748031f);
+		}
+		
+		// Low pass... on the Frequency
+		fxParam1 = clamp((fxParamTmp + 9.0f * fxParam1) * .1f, 0, 1);
 
-			float *sp = this->sampleBlock;
-			float lowL = v0L, highL = 0, bandL = v1L;
-			float lowR = v0R, highR = 0, bandR = v1R;
+		float *sp = this->sampleBlock;
+		float lowL = v0L, highL = 0, bandL = v1L;
+		float lowR = v0R, highR = 0, bandR = v1R;
+		float notch;
 
-			const float f = (fxParam1 * fxParam1) * 0.5f;
-			const float fb = fxParam2;
-			const float scale = sqrt3(fb);
+		const float f = (fxParam1 * fxParam1) * 0.5f;
+		const float fb = fxParam2;
+		const float scale = sqrt3(fb);
 
-			const int highBits = 0xFFFFFD4F;
-			const int lowBits = ~(highBits);
+		const int highBits = 0xFFFFFD4F;
+		const int lowBits = ~(highBits);
 
-			const short ll = (short)((fxParam1)*lowBits);
-			int digitsL, digitsR;
-			short lowDigitsL, lowDigitsR;
+		const int ll = (int)(fxParam1 * lowBits);
+		int digitsL, digitsR;
+		int lowDigitsL, lowDigitsR;
 
 		for (int k=BLOCK_SIZE ; k--; ) {
-				//LEFT
-				lowL = lowL + f * bandL;
-				highL = scale * (*sp) - lowL - fb * bandL;
-				bandL = f * highL + bandL;
+			//LEFT
+			lowL = lowL + f * bandL;
+			highL = scale * (*sp) - lowL - fb * bandL;
+			bandL = f * highL + bandL;
+			notch = lowL + highL;
 
-				digitsL = FLOAT2SHORT * bandL;
-				lowDigitsL = (digitsL & lowBits);
-				bandL = SHORT2FLOAT * (int)((digitsL & highBits) ^ ((lowDigitsL ^ ll) & 0x1FFF));
+			digitsL = FLOAT2SHORT * bandL;
+			lowDigitsL = (digitsL & lowBits);
+			bandL = SHORT2FLOAT * (float)((digitsL & highBits) ^ ((lowDigitsL ^ ll) & 0x1FFF));
 
-				*sp++ = clamp(highL * mixerGain, -ratioTimbres, ratioTimbres);
+			lowL = lowL + f * bandL;
+			highL = scale * (notch) - lowL - fb * bandL;
+			bandL = f * highL + bandL;
 
-				//RIGHT
-				lowR = lowR + f * bandR;
-				highR = scale * (*sp) - lowR - fb * bandR;
-				bandR = f * highR + bandR;
+			*sp++ = clamp(highL * mixerGain, -ratioTimbres, ratioTimbres);
 
-				digitsR = FLOAT2SHORT * bandR;
-				lowDigitsR = (digitsR & lowBits);
-				bandR = SHORT2FLOAT * (int)((digitsR & highBits) ^ ((lowDigitsR ^ ll) & 0x1FFF));
+			//RIGHT
+			lowR = lowR + f * bandR;
+			highR = scale * (*sp) - lowR - fb * bandR;
+			bandR = f * highR + bandR;
+			notch = lowR + highR;
 
-				*sp++ = clamp(highR * mixerGain, -ratioTimbres, ratioTimbres);
-			}
+			digitsR = FLOAT2SHORT * bandR;
+			lowDigitsR = (digitsR & lowBits);
+			bandR = SHORT2FLOAT * (float)((digitsR & highBits) ^ ((lowDigitsR ^ ll) & 0x1FFF));
 
-			v0L = lowL;
-			v1L = bandL;
-			v0R = lowR;
-			v1R = bandR;
+			lowR = lowR + f * bandR;
+			highR = scale * (notch) - lowR - fb * bandR;
+			bandR = f * highR + bandR;
+
+			*sp++ = clamp(highR * mixerGain, -ratioTimbres, ratioTimbres);
+		}
+
+		v0L = lowL;
+		v1L = bandL;
+		v0R = lowR;
+		v1R = bandR;
 	}
     break;
 case FILTER_TEXTURE2:
@@ -1999,12 +2061,18 @@ case FILTER_TEXTURE2:
 		float fxParamTmp = (params.effect.param1 + matrixFilterFrequency);
 		fxParamTmp *= fxParamTmp;
 
+		const uint_fast8_t random = (*(uint_fast8_t *)noise) & 0xff;
+		if (random > 252) {
+			fxParam1 += ((random & 1) * 0.007874015748031f);
+		}
+
 		// Low pass... on the Frequency
 		fxParam1 = clamp((fxParamTmp + 9.0f * fxParam1) * .1f, 0, 1);
 
 		float *sp = this->sampleBlock;
 		float lowL = v0L, highL = 0, bandL = v1L;
 		float lowR = v0R, highR = 0, bandR = v1R;
+		float notch;
 
 		const float f = (fxParam1 * fxParam1) * 0.5f;
 		const float fb = fxParam2;
@@ -2013,32 +2081,42 @@ case FILTER_TEXTURE2:
 		const int highBits = 0xFFFFFFAF;
 		const int lowBits = ~(highBits);
 
-		const short ll = (short)((fxParam1)*lowBits);
+		const int ll = fxParam1 * lowBits;
 		int digitsL, digitsR;
-		short lowDigitsL, lowDigitsR;
+		int lowDigitsL, lowDigitsR;
 
 		for (int k=BLOCK_SIZE ; k--; ) {
 			//LEFT
-			digitsL = FLOAT2SHORT * (bandL);
-			lowDigitsL = (digitsL & lowBits);
-			bandL = SHORT2FLOAT * (int)((digitsL & highBits) ^ ((lowDigitsL * ll) & 0x1FFF));
-
 			lowL = lowL + f * bandL;
 			highL = scale * (*sp) - lowL - fb * bandL;
 			bandL = f * highL + bandL;
+			notch = lowL + highL;
 
-			*sp++ = clamp(bandL * mixerGain, -ratioTimbres, ratioTimbres);
+			digitsL = FLOAT2SHORT * (bandL);
+			lowDigitsL = (digitsL & lowBits);
+			bandL = SHORT2FLOAT * (float)((digitsL & highBits) ^ ((lowDigitsL * ll) & 0x1FFF));
+
+			lowL = lowL + f * bandL;
+			highL = scale * (notch) - lowL - fb * bandL;
+			bandL = f * highL + bandL;
+
+			*sp++ = clamp((bandL) * mixerGain, -ratioTimbres, ratioTimbres);
 
 			//RIGHT
-			digitsR = FLOAT2SHORT * (bandR);
-			lowDigitsR = (digitsR & lowBits);
-			bandR = SHORT2FLOAT * (int)((digitsR & highBits) ^ ((lowDigitsR * ll) & 0x1FFF));
-
 			lowR = lowR + f * bandR;
 			highR = scale * (*sp) - lowR - fb * bandR;
 			bandR = f * highR + bandR;
+			notch = lowR + highR;
 
-			*sp++ = clamp(bandR * mixerGain, -ratioTimbres, ratioTimbres);
+			digitsR = FLOAT2SHORT * (bandR);
+			lowDigitsR = (digitsR & lowBits);
+			bandR = SHORT2FLOAT * (float)((digitsR & highBits) ^ ((lowDigitsR * ll) & 0x1FFF));
+
+			lowR = lowR + f * bandR;
+			highR = scale * (notch) - lowR - fb * bandR;
+			bandR = f * highR + bandR;
+
+			*sp++ = clamp((bandR) * mixerGain, -ratioTimbres, ratioTimbres);
 		}
 
 		v0L = lowL;
@@ -2051,6 +2129,11 @@ case FILTER_LPXOR:
 	{
 		float fxParamTmp = params.effect.param1 + matrixFilterFrequency;
 		fxParamTmp *= fxParamTmp;
+
+		const uint_fast8_t random = (*(uint_fast8_t *)noise) & 0xff;
+		if (random > 252) {
+			fxParam1 += ((random & 1) * 0.007874015748031f);
+		}
 
 		// Low pass... on the Frequency
 		fxParam1 = clamp((fxParamTmp + 9.0f * fxParam1) * .1f, 0, 1);
@@ -2069,27 +2152,24 @@ case FILTER_LPXOR:
 		int digitsAL, digitsBL, digitsAR, digitsBR;
 		digitsAL = digitsBL = digitsAR = digitsBR = 0;
 
-		const uint8_t random = (*(uint8_t *)noise) & 0xff;
-		if (random > 252) {
-			fxParam1 += ((random & 1) * 0.007874015748031f);
-		}
-
 		const short bitmask = 0xfac;
 
 		for (int k = BLOCK_SIZE; k--;) {
 			// Left voice
 			digitsAL = FLOAT2SHORT * fold(localv0L * gain);
 			digitsBL = FLOAT2SHORT * (*sp);
-			digitized = SHORT2FLOAT * (int)((digitsAL ^ (digitsBL & bitmask)));
+			digitized = SHORT2FLOAT * (float)(digitsAL ^ (digitsBL & bitmask));
 			localv0L = (*sp * b) + (digitized * a);
+			localv0L = (*sp * b) + (localv0L * a);
 
 			*sp++ = clamp(localv0L * mixerGain, -ratioTimbres, ratioTimbres);
 
 			// Right voice
 			digitsAR = FLOAT2SHORT * fold(localv0R * gain);
 			digitsBR = FLOAT2SHORT * (*sp);
-			digitized = SHORT2FLOAT * (int)((digitsAR ^ (digitsBR & bitmask)));
+			digitized = SHORT2FLOAT * (float)(digitsAR ^ (digitsBR & bitmask));
 			localv0R = (*sp * b) + (digitized * a);
+			localv0R = (*sp * b) + (localv0R * a);
 
 			*sp++ = clamp(localv0R * mixerGain, -ratioTimbres, ratioTimbres);
 		}
@@ -2101,6 +2181,11 @@ case FILTER_LPXOR2:
 	{
 		float fxParamTmp = params.effect.param1 + matrixFilterFrequency;
 		fxParamTmp *= fxParamTmp;
+
+		const uint8_t random = (*(uint8_t *)noise) & 0xff;
+		if (random > 252) {
+			fxParam1 += ((random & 1) * 0.007874015748031f);
+		}
 
 		// Low pass... on the Frequency
 		fxParam1 = clamp((fxParamTmp + 9.0f * fxParam1) * .1f, 0, 1);
@@ -2119,27 +2204,24 @@ case FILTER_LPXOR2:
 		int digitsAL, digitsBL, digitsAR, digitsBR;
 		digitsAL = digitsBL = digitsAR = digitsBR = 0;
 
-		const uint8_t random = (*(uint8_t *)noise) & 0xff;
-		if (random > 252) {
-			fxParam1 += ((random & 1) * 0.007874015748031f);
-		}
-
 		const short bitmask = 0xfba - (int)(fxParam1 * 7);
 
 		for (int k=BLOCK_SIZE ; k--; ) {
 			// Left voice
 			digitsAL = FLOAT2SHORT * localv0L;
 			digitsBL = FLOAT2SHORT * fold(*sp * gain);
-			digitized = SHORT2FLOAT * roundf((digitsAL | (digitsBL & bitmask)));
+			digitized = SHORT2FLOAT * (float)((digitsAL | (digitsBL & bitmask)));
 			localv0L = (*sp * b) + (digitized * a);
+			localv0L = (*sp * b) + (localv0L * a);
 
 			*sp++ = clamp(localv0L * mixerGain, -ratioTimbres, ratioTimbres);
 
 			// Right voice
 			digitsAR = FLOAT2SHORT * localv0R;
 			digitsBR = FLOAT2SHORT * fold(*sp * gain);
-			digitized = SHORT2FLOAT * roundf((digitsAR | (digitsBR & bitmask)));
+			digitized = SHORT2FLOAT * (float)((digitsAR | (digitsBR & bitmask)));
 			localv0R = (*sp * b) + (digitized * a);
+			localv0R = (*sp * b) + (localv0R * a);
 
 			*sp++ = clamp(localv0R * mixerGain, -ratioTimbres, ratioTimbres);
 		}
@@ -2157,7 +2239,7 @@ case FILTER_LPSIN:
 	const float f = fxParam2 * fxParam2 * SVFRANGE;
 	const float fb = 0.45f;
 	const float scale = sqrt3(fb);
-	const int pos = (int)(fxParam1 * 2048);
+	const int pos = (int)(fxParam1 * 2060);
 
 	float *sp = this->sampleBlock;
 	float lowL = v0L, highL = 0, bandL = v1L;
@@ -2198,7 +2280,7 @@ case FILTER_HPSIN:
 	const float f = fxParam2 * fxParam2 * SVFRANGE;
 	const float fb = 0.94f;
 	const float scale = sqrt3(fb);
-	const int pos = (int)(fxParam1 * 2048);
+	const int pos = (int)(fxParam1 * 2060);
 
 	float *sp = this->sampleBlock;
 	float lowL = v0L, highL = 0, bandL = v1L;
@@ -2229,6 +2311,230 @@ case FILTER_HPSIN:
 	v1R = bandR;
     }
     break;
+case FILTER_TRIPLENOTCH:
+{
+	//https://www.musicdsp.org/en/latest/Filters/23-state-variable.html
+	float fxParamTmp = (params.effect.param1 + matrixFilterFrequency);
+	fxParamTmp *= fxParamTmp;
+	fxParam1 = ((fxParamTmp + 9.0f * fxParam1) * .1f);
+
+	float OffsetTmp = fabsf(params.effect.param2);
+	fxParam2 = ((OffsetTmp + 9.0f * fxParam2) * .1f);
+
+	const float offset = fxParam2 * 0.88f - 0.44f;
+
+	const float f1L = clamp((fxParam1), 0.001f, 1);
+	const float f2L = clamp((fxParam1 + offset), 0.001f, 1);
+	const float f3L = clamp((fxParam1 + offset * 2), 0.001f, 1);
+
+	const float lrDelta = offset * 0.05f;
+	const float f1R = clamp((f1L + lrDelta), 0.001f, 1);
+	const float f2R = clamp((f2L + lrDelta), 0.001f, 1);
+	const float f3R = clamp((f3L + lrDelta), 0.001f, 1);
+
+	float *sp = this->sampleBlock;
+	float lowL = v0L, highL = 0, bandL = v1L;
+	float lowR = v0R, highR = 0, bandR = v1R;
+	float lowL2 = v2L, highL2 = 0, bandL2 = v3L;
+	float lowR2 = v2R, highR2 = 0, bandR2 = v3R;
+	float lowL3 = v4L, highL3 = 0, bandL3 = v5L;
+	float lowR3 = v4R, highR3 = 0, bandR3 = v5R;
+
+	for (int k = BLOCK_SIZE ; k--; ) {
+		// Left voice
+		lowL = lowL + f1L * bandL;
+		highL = (*sp) - lowL - bandL;
+		bandL = f1L * highL + bandL;
+
+		lowL2 = lowL2 + f2L * bandL2;
+		highL2 = (highL + lowL) - lowL2 - bandL2;
+		bandL2 = f2L * (highL2) + bandL2;
+
+		lowL3 = lowL3 + f3L * bandL3;
+		highL3 = (highL2 + lowL2) - lowL3 - bandL3;
+		bandL3 = f3L * highL3 + bandL3;
+
+		*sp++ = clamp((highL3 + lowL3) * mixerGain, -ratioTimbres, ratioTimbres);
+
+		// Right voice
+		lowR = lowR + f1R * bandR;
+		highR = (*sp) - lowR - bandR;
+		bandR = f1R * highR + bandR;
+
+		lowR2 = lowR2 + f2R * bandR2;
+		highR2 = (highR + lowR) - lowR2 - bandR2;
+		bandR2 = f2R * (highR2) + bandR2;
+
+		lowR3 = lowR3 + f3R * bandR3;
+		highR3 = (highR2 + lowR2) - lowR3 - bandR3;
+		bandR3 = f3R * highR3 + bandR3;
+
+		*sp++ = clamp((highR3 + lowR3) * mixerGain, -ratioTimbres, ratioTimbres);
+	}
+
+	v0L = lowL;
+	v1L = bandL;
+	v0R = lowR;
+	v1R = bandR;
+
+	v2L = lowL2;
+	v3L = bandL2;
+	v2R = lowR2;
+	v3R = bandR2;
+
+	v4L = lowL3;
+	v5L = bandL3;
+	v4R = lowR3;
+	v5R = bandR3;
+}
+break;
+case FILTER_AP3 :
+{
+	//http://denniscronin.net/dsp/vst.html
+	float fxParamTmp = (params.effect.param1 + matrixFilterFrequency);
+	fxParamTmp *= fxParamTmp;
+	fxParam1 = ((fxParamTmp + 9.0f * fxParam1) * .1f);
+
+	float OffsetTmp = fabsf(params.effect.param2);
+	fxParam2 = ((OffsetTmp + 9.0f * fxParam2) * .1f);
+
+	const float offset = fxParam2 * 0.66f - 0.33f;
+
+	const float f1L = clamp((fxParam1), 0.001f, 1);
+	const float f2L = clamp((fxParam1 + offset), 0.001f, 1);
+	const float f3L = clamp((fxParam1 + offset * 2), 0.001f, 1);
+	float coef1L = (1.0f - f1L) / (1.0f + f1L);
+	float coef2L = (1.0f - f2L) / (1.0f + f2L);
+	float coef3L = (1.0f - f3L) / (1.0f + f3L);
+
+	const float lrDelta = offset * 0.05f;
+	const float f1R = clamp((f1L + lrDelta), 0.001f, 1);
+	const float f2R = clamp((f2L + lrDelta), 0.001f, 1);
+	const float f3R = clamp((f3L + lrDelta), 0.001f, 1);
+	float coef1R = (1.0f - f1R) / (1.0f + f1R);
+	float coef2R = (1.0f - f2R) / (1.0f + f2R);
+	float coef3R = (1.0f - f3R) / (1.0f + f3R);
+
+	float *sp = this->sampleBlock;
+
+	float _ly1L = v0L, _ly1R = v0R;
+	float _ly2L = v1L, _ly2R = v1R;
+	float _ly3L = v2L, _ly3R = v2R;
+	float _lx1L = v3L, _lx1R = v3R;
+	float _lx2L = v4L, _lx2R = v4R;
+	float _lx3L = v5L, _lx3R = v5R;
+
+	float _feedback = 0.1f;
+	float inmix;
+	float finalGain = mixerGain * 0.5f;
+
+	for (int k = BLOCK_SIZE ; k--; ) {
+		// Left voice
+		inmix = (*sp) + _feedback * _ly2L;
+
+		_ly1L = coef1L * (_ly1L + inmix) - _lx1L; // do 1st filter
+		_lx1L = inmix;
+		_ly2L = coef2L * (_ly2L + _ly1L) - _lx2L; // do 2nd filter
+		_lx2L = _ly1L;
+		_ly3L = coef3L * (_ly3L + _ly2L) - _lx3L; // do 3rd filter
+		_lx3L = _ly2L;
+
+		*sp++ = clamp(((*sp) + _ly3L) * mixerGain, -ratioTimbres, ratioTimbres);
+
+		// Right voice
+		inmix = (*sp) + _feedback * _ly2R;
+
+		_ly1R = coef1R * (_ly1R + inmix) - _lx1R; // do 1st filter
+		_lx1R = inmix;
+		_ly2R = coef2R * (_ly2R + _ly1R) - _lx2R; // do 2nd filter
+		_lx2R = _ly1R;
+		_ly3R = coef3R * (_ly3R + _ly2R) - _lx3R; // do 3rd filter
+		_lx3R = _ly2R;
+
+		*sp++ = clamp(((*sp) + _ly3R) * mixerGain, -ratioTimbres, ratioTimbres);
+	}
+
+	v0L = _ly1L; v0R = _ly1R;
+	v1L = _ly2L; v1R = _ly2R;
+	v2L = _ly3L; v2R = _ly3R;
+	v3L = _lx1L; v3R = _lx1R;
+	v4L = _lx2L; v4R = _lx2R;
+	v5L = _lx3L; v5R = _lx3R;
+}
+break;
+case FILTER_AP3B :
+{
+	float fxParamTmp = (params.effect.param1 + matrixFilterFrequency);
+	fxParamTmp *= fxParamTmp;
+	fxParam1 = ((fxParamTmp + 9.0f * fxParam1) * .1f);
+
+	float OffsetTmp = fabsf(params.effect.param2);
+	fxParam2 = ((OffsetTmp + 9.0f * fxParam2) * .1f);
+
+	const float offset = fxParam2 * 0.66f - 0.33f;
+
+	const float f1L = clamp((fxParam1), 0.001f, 1);
+	const float f2L = clamp((fxParam1 + offset), 0.001f, 1);
+	const float f3L = clamp((fxParam1 + offset * 2), 0.001f, 1);
+	float coef1L = (1.0f - f1L) / (1.0f + f1L);
+	float coef2L = (1.0f - f2L) / (1.0f + f2L);
+	float coef3L = (1.0f - f3L) / (1.0f + f3L);
+
+	const float lrDelta = offset * 0.05f;
+	const float f1R = clamp((f1L + lrDelta), 0.001f, 1);
+	const float f2R = clamp((f2L + lrDelta), 0.001f, 1);
+	const float f3R = clamp((f3L + lrDelta), 0.001f, 1);
+	float coef1R = (1.0f - f1R) / (1.0f + f1R);
+	float coef2R = (1.0f - f2R) / (1.0f + f2R);
+	float coef3R = (1.0f - f3R) / (1.0f + f3R);
+
+	float *sp = this->sampleBlock;
+
+	float _ly1L = v0L, _ly1R = v0R;
+	float _ly2L = v1L, _ly2R = v1R;
+	float _ly3L = v2L, _ly3R = v2R;
+	float _lx1L = v3L, _lx1R = v3R;
+	float _lx2L = v4L, _lx2R = v4R;
+	float _lx3L = v5L, _lx3R = v5R;
+
+	float _feedback = 0.68f;
+	float inmix;
+	float finalGain = mixerGain * 0.5f;
+
+	for (int k = BLOCK_SIZE ; k--; ) {
+		// Left voice
+		inmix = (*sp) - _feedback * _ly2L;
+
+		_ly1L = coef1L * (_ly1L + inmix) - _lx1L; // do 1st filter
+		_lx1L = inmix;
+		_ly2L = coef2L * (_ly2L + _ly1L) - _lx2L; // do 2nd filter
+		_lx2L = _ly1L;
+		_ly3L = coef3L * (_ly3L + _ly2L) - _lx3L; // do 3rd filter
+		_lx3L = _ly2L;
+
+		*sp++ = clamp(((*sp) + _ly3L) * mixerGain, -ratioTimbres, ratioTimbres);
+
+		// Right voice
+		inmix = (*sp) - _feedback * _ly2R;
+
+		_ly1R = coef1R * (_ly1R + inmix) - _lx1R; // do 1st filter
+		_lx1R = inmix;
+		_ly2R = coef2R * (_ly2R + _ly1R) - _lx2R; // do 2nd filter
+		_lx2R = _ly1R;
+		_ly3R = coef3R * (_ly3R + _ly2R) - _lx3R; // do 3rd filter
+		_lx3R = _ly2R;
+
+		*sp++ = clamp(((*sp) + _ly3R) * mixerGain, -ratioTimbres, ratioTimbres);
+	}
+
+	v0L = _ly1L; v0R = _ly1R;
+	v1L = _ly2L; v1R = _ly2R;
+	v2L = _ly3L; v2R = _ly3R;
+	v3L = _lx1L; v3R = _lx1R;
+	v4L = _lx2L; v4R = _lx2R;
+	v5L = _lx3L; v5R = _lx3R;
+}
+break;
 case FILTER_OFF:
     {
     	// Filter off has gain...
@@ -2263,8 +2569,7 @@ void Timbre::afterNewParamsLoad() {
 
 
     resetArpeggiator();
-    v0L = v1L = 0.0f;
-    v0R = v1R = 0.0f;
+    v0L = v1L = v2L = v3L = v4L = v5L = v0R = v1R = v2R = v3R = v4R = v5R = 0.0f;
     for (int k=0; k<NUMBER_OF_ENCODERS; k++) {
         setNewEffecParam(k);
     }
@@ -2371,8 +2676,8 @@ void Timbre::recomputeBPValues(float q, float fSquare) {
 
 void Timbre::setNewEffecParam(int encoder) {
 	if (encoder == 0) {
-	    v0L = v1L = 0.0f;
-	    v0R = v1R = 0.0f;
+   		v0L = v1L = v2L = v3L = v4L = v5L = v0R = v1R = v2R = v3R = v4R = v5R = 0.0f;
+
 	    for (int k=1; k<NUMBER_OF_ENCODERS; k++) {
 	        setNewEffecParam(k);
 	    }
