@@ -57,6 +57,7 @@ public:
     bool isPlaying() { return this->playing; }
     bool isNewNotePending() { return this->newNotePending; }
     unsigned int getIndex() { return this->index; }
+    float getVelocity() { return this->velocity; }
     uint8_t getNote() { return this->note; }
     uint8_t getNextPendingNote() { return this->nextPendingNote; }
     uint8_t getNextGlidingNote() { return this->nextGlidingNote; }
