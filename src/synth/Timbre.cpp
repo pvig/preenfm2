@@ -865,7 +865,7 @@ void Timbre::fxAfterBlock(float ratioTimbres) {
     int effectType = params.effect.type;
     float gainTmp =  params.effect.param3 * numberOfVoiceInverse * ratioTimbres;
     mixerGain = 0.02f * gainTmp + .98f  * mixerGain;
-
+ 
     switch (effectType) {
     case FILTER_LP:
     {
