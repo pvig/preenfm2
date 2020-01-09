@@ -703,6 +703,7 @@ void Timbre::preenNoteOn(char note, char velocity) {
 }
 
 void Timbre::preenNoteOnUpdateMatrix(int voiceToUse, int note, int velocity) {
+
     // Update voice matrix with midi note and velocity
 	float newVelo = INV127 * velocity;
     voices[voiceToUse]->matrix.setSource(MATRIX_SOURCE_NOTE1, midiNoteScale[0][timbreNumber][note]);
@@ -739,6 +740,14 @@ void Timbre::preenNoteOnUpdateMatrix(int voiceToUse, int note, int velocity) {
 	} else {
 		voices[voiceToUse]->matrix.setSource(MATRIX_SOURCE_NOTE_DIVERGENCE, clamp(prevDivergenceVal - INV16, 0, 1) );
 	}
+
+	//MATRIX_SOURCE_NOTE_SPEED
+	voices[voiceToUse]->matrix.setSource(MATRIX_SOURCE_NOTE_SPEED, sigmoidPos(clamp(noteTimer1, 0, 1)));
+	noteTimer1 = 1 - clamp(noteTimer2, 0, 1) * 0.5f;
+
+	//MATRIX_SOURCE_NOTE_DURATION
+	voices[voiceToUse]->matrix.setSource(MATRIX_SOURCE_NOTE_DURATION, sqrtf(clamp(noteTimer2, 0, 1)));
+	noteTimer2 = 0.1f;
 }
 
 void Timbre::preenNoteOff(char note) {
@@ -850,7 +859,12 @@ void Timbre::cleanNextBlock() {
 
 
 void Timbre::prepareMatrixForNewBlock() {
+	noteTimer1 -= 0.00033f;
+
     for (int k = 0; k < params.engine1.numberOfVoice; k++) {
+		if(voices[voiceNumber[k]]->isPlaying()) {
+			noteTimer2 += 0.000088f;
+		}
         voices[voiceNumber[k]]->prepareMatrixForNewBlock();
     }
 }
