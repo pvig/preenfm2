@@ -601,7 +601,7 @@ void Timbre::initVoicePointer(int n, Voice* voice) {
 	voices[n] = voice;
 }
 
-void Timbre::noteOn(char note, char velocity) {
+void Timbre::noteOn(uint8_t note, uint8_t velocity) {
 	if (params.engineArp1.clock) {
 		arpeggiatorNoteOn(note, velocity);
 	} else {
@@ -609,7 +609,7 @@ void Timbre::noteOn(char note, char velocity) {
 	}
 }
 
-void Timbre::noteOff(char note) {
+void Timbre::noteOff(uint8_t note) {
 	if (params.engineArp1.clock) {
 		arpeggiatorNoteOff(note);
 	} else {
@@ -619,7 +619,7 @@ void Timbre::noteOff(char note) {
 
 int cptHighNote = 0;
 
-void Timbre::preenNoteOn(char note, char velocity) {
+void Timbre::preenNoteOn(uint8_t note, uint8_t velocity) {
 
 	int iNov = (int) params.engine1.numberOfVoice;
 	if (unlikely(iNov == 0)) {
@@ -660,7 +660,7 @@ void Timbre::preenNoteOn(char note, char velocity) {
 
             preenNoteOnUpdateMatrix(n, note, velocity);
             voices[n]->noteOnWithoutPop(note, velocity, voiceIndex++);
-			lastPlayedVoiceNum = n;
+			this->lastPlayedVoiceNum = n;
 			lastNote = note;
 			return;
 		}
@@ -754,8 +754,10 @@ void Timbre::preenNoteOnUpdateMatrix(int voiceToUse, int note, int velocity) {
 
     // Update voice matrix with midi note and velocity
 	float newVelo = INV127 * velocity;
-    voices[voiceToUse]->matrix.setSource(MATRIX_SOURCE_NOTE1, midiNoteScale[0][timbreNumber][note]);
-    voices[voiceToUse]->matrix.setSource(MATRIX_SOURCE_NOTE2, midiNoteScale[1][timbreNumber][note]);
+    if (likely(note < 128)) {
+    	voices[voiceToUse]->matrix.setSource(MATRIX_SOURCE_NOTE1, midiNoteScale[0][timbreNumber][note]);
+    	voices[voiceToUse]->matrix.setSource(MATRIX_SOURCE_NOTE2, midiNoteScale[1][timbreNumber][note]);
+	}
 	voices[voiceToUse]->matrix.setSource(MATRIX_SOURCE_VELOCITY, newVelo);
 	voices[voiceToUse]->matrix.setSource(MATRIX_SOURCE_NOTE_INTERVAL, INV127 * 2 * (note - voices[this->lastPlayedVoiceNum]->getNote()));
 	voices[voiceToUse]->matrix.setSource(MATRIX_SOURCE_VELOCITY_INTERVAL, 2 * (lastVelocity - newVelo));
@@ -831,7 +833,25 @@ void Timbre::preenNoteOnUpdateMatrix(int voiceToUse, int note, int velocity) {
 	}
 }
 
-void Timbre::preenNoteOff(char note) {
+
+
+
+#ifdef CVIN
+void Timbre::propagateCvFreq(uint8_t note) {
+    int iNov = (int) params.engine1.numberOfVoice;
+    for (int k = 0; k < iNov; k++) {
+        int n = voiceNumber[k];
+        if (voices[n]->getNote() == note) {
+            if (voices[n]->isPlaying()) {
+                voices[n]->propagateCvFreq(note);
+            }
+            return;
+        }
+    }
+}
+#endif
+
+void Timbre::preenNoteOff(uint8_t note) {
     int iNov = (int)params.engine1.numberOfVoice;
     // get previous note index from this note :
     uint8_t next_ptr = pf_note_stack.NoteOff(note);
@@ -885,6 +905,8 @@ void Timbre::setHoldPedal(int value) {
 
 void Timbre::setNewBPMValue(float bpm) {
 	ticksPerSecond = bpm * 24.0f / 60.0f;
+
+	float calledPerSecond = PREENFM_FREQUENCY / 32.0f;
 	ticksEveryNCalls = calledPerSecond / ticksPerSecond;
 	ticksEveyNCallsInteger = (int)ticksEveryNCalls;
 }
@@ -939,7 +961,10 @@ void Timbre::prepareMatrixForNewBlock() {
 		if(voices[voiceNumber[k]]->isPlaying()) {
 			noteTimer2 += 0.000088f;
 		}
-        voices[voiceNumber[k]]->prepareMatrixForNewBlock();
+		// Can be -1 during preset load
+		if (likely(voiceNumber[k] != -1)) {
+	        voices[voiceNumber[k]]->prepareMatrixForNewBlock();
+		}
     }
 }
 
@@ -1184,7 +1209,6 @@ void Timbre::fxAfterBlock(float ratioTimbres) {
 			}
     	} else if (pan > 0) {
         	float oneMinusPan = 1 - pan;
-        	float adjustedmixerGain = (pan * .5) * mixerGain;
         	for (int k=0 ; k < BLOCK_SIZE ; k++) {
 				sampleL = *(sp);
 				sampleR = *(sp + 1);
@@ -4777,10 +4801,11 @@ case FILTER_OFF:
 		}
     }
     break;
-    default:
-    	// NO EFFECT
-   	break;
-    }
+default:
+	// NO EFFECT
+break;
+}
+
 // Left Right Balance
 // Controled by CC10 only
 
@@ -5072,7 +5097,7 @@ void Timbre::setNewEffecParam(int encoder) {
 
 
 
-void Timbre::arpeggiatorNoteOn(char note, char velocity) {
+void Timbre::arpeggiatorNoteOn(uint8_t note, uint8_t velocity) {
 	// CLOCK_MODE_INTERNAL
 	if (params.engineArp1.clock == CLOCK_INTERNAL) {
 		if (idle_ticks_ >= 96 || !running_) {
@@ -5089,7 +5114,7 @@ void Timbre::arpeggiatorNoteOn(char note, char velocity) {
 }
 
 
-void Timbre::arpeggiatorNoteOff(char note) {
+void Timbre::arpeggiatorNoteOff(uint8_t note) {
 	if (ignore_note_off_messages_) {
 		return;
 	}

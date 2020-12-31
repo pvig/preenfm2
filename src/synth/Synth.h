@@ -24,6 +24,11 @@
 #include "LfoEnv.h"
 #include "LfoStepSeq.h"
 
+#ifdef CVIN
+#include "CVIn.h"
+#include "VisualInfo.h"
+#endif
+
 #include "SynthParamListener.h"
 #include "SynthStateAware.h"
 
@@ -40,6 +45,17 @@ public:
         init(sState);
     }
 
+    void setDacNumberOfBits(uint32_t dacNumberOfBits);
+#ifdef CVIN
+    void setCVIn(CVIn * cvin) {
+        this->cvin = cvin;
+    }
+
+    void setVisualInfo(VisualInfo *visualInfo) {
+        this->visualInfo = visualInfo;
+    }
+#endif
+
     void noteOn(int timbre, char note, char velocity);
     void noteOff(int timbre, char note);
     void allNoteOff(int timbre);
@@ -47,7 +63,8 @@ public:
     void allSoundOff(int timbre);
     bool isPlaying();
     void buildNewSampleBlock();
-
+    void buildNewSampleBlockMcp4922();
+    void buildNewSampleBlockCS4344(int32_t *sample);
 
     // Overide SynthParamListener
     void playNote(int timbreNumber, char note, char velocity) {
@@ -122,6 +139,10 @@ public:
         }
     }
 
+    uint32_t *getSample() {
+        return this->samples;
+    }
+
     inline int leftSampleAtReadCursor() const {
         return this->samples[this->readCursor];
     }
@@ -171,6 +192,13 @@ public:
     void showCycles();
 #endif
 
+    float getCpuUsage() {
+        return cpuUsage;
+    }
+
+    int getPlayingNotes() {
+        return playingNotes;
+    }
 
 private:
     // Called by setSynthState
@@ -186,11 +214,20 @@ private:
     // sample Buffer
     volatile int readCursor;
     volatile int writeCursor;
-    int samples[256];
+    uint32_t samples[256];
 
     // gate
     float currentGate;
 
+    float cpuUsage;
+    int playingNotes;
+#ifdef CVIN
+    bool cvin12Ready ;
+    bool cvin34Ready ;
+    VisualInfo *visualInfo;
+    CVIn* cvin;
+    int triggeredTimbre;
+#endif
 };
 
 

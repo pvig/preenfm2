@@ -1,13 +1,11 @@
 #/bin/bash
 
 make cleanall
-make -j5 pfm
+make -j12 pfm
 make clean
-make -j5 pfmo
+make -j12 pfmcv
 make clean
-make -j5 boot
-make clean
-make sysex
+make -j12 boot
 make zip
 
 

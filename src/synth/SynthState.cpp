@@ -422,8 +422,8 @@ const char* matrixSourceNames [] = { "None", "lfo1", "lfo2", "lfo3", "env1", "en
 #ifdef CVIN
         , "CV1 ", "CV2 ", "CV3 ", "CV4 "
 #endif
-    , "CC74"
-} ;
+    , "CC74", "rndK"
+};
 
 #ifdef CVIN
 const unsigned char  matrixSourceOrder[] =        { 0, 19, 20, 21, 22, 1, 2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 17, 18, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 13, 14, 15, 16, 44};
@@ -627,6 +627,12 @@ SynthState::SynthState() {
     fullState.saveWhat = 0;
     fullState.toolsWhat = 0;
     fullState.scalaWhat = 0;
+#ifdef CVIN
+    fullState.midiConfigValue[MIDICONFIG_CVIN1_2] = 1;
+    fullState.midiConfigValue[MIDICONFIG_CVIN_A2] = 256;
+    fullState.midiConfigValue[MIDICONFIG_CVIN_A6] = 737;
+    fullState.midiConfigValue[MIDICONFIG_CV_GATE] = 50;
+#endif
     fullState.midiConfigValue[MIDICONFIG_USB] = 2;
 	fullState.midiConfigValue[MIDICONFIG_GLOBAL] = 0;
 	fullState.midiConfigValue[MIDICONFIG_CURRENT_INSTRUMENT] = 0;
@@ -1366,6 +1372,8 @@ void SynthState::loadPreenFMPatchFromMidi(int timbre, int bank, int bankLSB, int
     {
         PFM2File const *bank = storage->getPatchBank()->getFile(bankLSB);
         if (bank->fileType != FILE_EMPTY) {
+            fullState.preenFMBankNumber = bankLSB;
+            fullState.preenFMPresetNumber = patchNumber;
             loadPreenFMPatch(timbre, bank, patchNumber, params);
         }
     }
@@ -1374,6 +1382,8 @@ void SynthState::loadPreenFMPatchFromMidi(int timbre, int bank, int bankLSB, int
     {
         PFM2File const *bank = storage->getComboBank()->getFile(bankLSB);
         if (bank->fileType != FILE_EMPTY) {
+            fullState.preenFMComboNumber = bankLSB;
+            fullState.preenFMComboPresetNumber = patchNumber;
             loadPreenFMCombo(bank, patchNumber);
         }
     }
@@ -1385,6 +1395,8 @@ void SynthState::loadPreenFMPatchFromMidi(int timbre, int bank, int bankLSB, int
         int dx7bank = bank - 2;
         PFM2File const *bank = storage->getDX7SysexFile()->getFile(bankLSB + dx7bank * 128);
         if (bank->fileType != FILE_EMPTY && patchNumber < 32) {
+            fullState.dx7BankNumber = bankLSB;
+            fullState.dx7PresetNumber = patchNumber;
             loadDx7Patch(timbre, bank, patchNumber, params);
         }
     }

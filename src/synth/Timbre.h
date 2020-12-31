@@ -67,8 +67,8 @@ public:
         return this->lastPlayedVoiceNum;
     }
     // Arpegiator
-    void arpeggiatorNoteOn(char note, char velocity);
-    void arpeggiatorNoteOff(char note);
+    void arpeggiatorNoteOn(uint8_t note, uint8_t velocity);
+    void arpeggiatorNoteOff(uint8_t note);
     void StartArpeggio();
     void StepArpeggio();
     void Start();
@@ -80,12 +80,17 @@ public:
     void resetArpeggiator();
     uint16_t getArpeggiatorPattern() const;
 
-    void noteOn(char note, char velocity);
-    void noteOff(char note);
+    void noteOn(uint8_t note, uint8_t velocity);
+    void noteOff(uint8_t note);
 
-    void preenNoteOn(char note, char velocity);
+    void preenNoteOn(uint8_t note, uint8_t velocity);
     inline void preenNoteOnUpdateMatrix(int voiceToUse, int note, int velocity);
-    void preenNoteOff(char note);
+#ifdef CVIN
+    void propagateCvFreq(uint8_t note);
+    void setCvFrequency(float freq) { this->cvFrequency = freq; }
+    float getCvFrequency() { return this->cvFrequency; };
+#endif
+    void preenNoteOff(uint8_t note);
     void numberOfVoicesChanged() {
         if (params.engine1.numberOfVoice > 0) {
             numberOfVoiceInverse = 1.0f / params.engine1.numberOfVoice;
@@ -133,7 +138,7 @@ public:
     // Midi Note Scale
     void updateMidiNoteScale(int scale);
 
-    // Do matrix use LFO
+    // Does the matrix use LFOs
     bool isLfoUsed(int lfo) {
         return  lfoUSed[lfo] > 0;
     }
@@ -171,7 +176,9 @@ private:
     Synth *synth;
     bool holdPedal;
     uint8_t lastPlayedVoiceNum;
-
+#ifdef CVIN
+    float cvFrequency;
+#endif
 
     // 6 oscillators Max
     Osc osc1;
@@ -197,7 +204,6 @@ private:
 
     // TO REFACTOR
     float ticksPerSecond;
-    static const float calledPerSecond = PREENFM_FREQUENCY / 32.0f;
     float ticksEveryNCalls;
     int ticksEveyNCallsInteger;
 
@@ -206,14 +212,6 @@ private:
     float arpegiatorStep;
     NoteStack note_stack;
     EventScheduler event_scheduler;
-    //
-    //
-    //    uint8_t clk_mode_;
-    //    uint8_t groove_template_;
-    //    uint8_t groove_amount_;
-    //    uint8_t channel_;
-    //    uint8_t pattern_;
-    //
 
     uint8_t running_;
     uint8_t latch_;

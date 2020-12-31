@@ -18,10 +18,11 @@
 
 #include "./Menu.h"
 
-#ifndef OVERCLOCK
-#define OVERCLOCK_STRING
+
+#ifndef CVIN
+#define CVIN_STRING
 #else
-#define OVERCLOCK_STRING "o"
+#define CVIN_STRING "_cv"
 #endif
 
 
@@ -34,11 +35,39 @@ const char* bootOptions [] = { "Default", "Bank", "Combo", "DX7" };
 const char* encoderType [] = { "12", "24", "12i", "24i" };
 const char* usbMidi[] = { "Off", "In", "In/Out" };
 const char* operatorButton[] = { "New", "Old" };
-const char* version[] = { PFM2_VERSION" "OVERCLOCK_STRING };
+const char* version[] = { PFM2_VERSION""CVIN_STRING};
 const char* oledSaver[] = { "Off", "2m", "5m", "10m", "1h" };
+
 const char* globalTuning[] = { "G" };
+const char* inst1[] = { "Off", "1", "2", "3", "4", "12", "123", "1234", "seq", "rand", "cv3"};
 
 const struct MidiConfig midiConfig[]  = {
+#ifdef CVIN
+        {
+                "CV inst: ",
+                "cvinst",
+                11,
+                inst1
+        },
+        {
+                "CV A(33): ",
+                "cva33",
+                1023,
+                0
+        },
+        {
+                "CV A(81): ",
+                "cva81",
+                1023,
+                0
+        },
+        {
+                "CV GATE %: ",
+                "cvgate",
+                100,
+                0
+        },
+#endif
         {
                 "Usb Midi: ",
                 "usbmidi",
@@ -173,7 +202,7 @@ const struct MidiConfig midiConfig[]  = {
         },
         // Don't count in MIDICONFIG_SIZE
         {
-                "Firmware: ",
+                "V: ",
                 "",
                 1,
                 version
