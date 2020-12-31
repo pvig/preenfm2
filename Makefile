@@ -17,13 +17,17 @@ SYMBOLS_FIRMWARE_O=build/symbols_p2_${PFM2_VERSION_NUMBER}o.txt
 
 BIN_SYSEX=build/p2_${PFM2_VERSION_NUMBER}.syx
 
-C      = arm-none-eabi-gcc
-CC      = arm-none-eabi-c++
-LD      = arm-none-eabi-ld -v
-CP      = arm-none-eabi-objcopy
-OD      = arm-none-eabi-objdump
-AS      = arm-none-eabi-as
+# Define you GCCPATH HERE
+GCC_PATH:=${PWD}/../gcc-arm-none-eabi-4_7-2014q2/bin
 
+C       = ${GCC_PATH}/arm-none-eabi-gcc
+CC      = ${GCC_PATH}/arm-none-eabi-c++
+LD      = ${GCC_PATH}/arm-none-eabi-ld -v
+CP      = ${GCC_PATH}/arm-none-eabi-objcopy
+OD      = ${GCC_PATH}/arm-none-eabi-objdump
+AS      = ${GCC_PATH}/arm-none-eabi-as
+NM      = ${GCC_PATH}/arm-none-eabi-nm
+READELF = ${GCC_PATH}/arm-none-eabi-readelf
 
 SRC_FIRMWARE = src/PreenFM.cpp \
 	src/PreenFM_irq.c \
