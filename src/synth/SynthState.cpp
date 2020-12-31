@@ -1325,10 +1325,12 @@ void SynthState::setScalaEnable(bool enable) {
 }
 
 void SynthState::setScalaScale(int scaleNumber) {
-    fullState.scalaScaleConfig.scalaFile = storage->getScalaFile()->getFile(scaleNumber);
-
-    if (fullState.scalaScaleConfig.scalaFile->fileType != FILE_EMPTY && fullState.scalaScaleConfig.scalaEnabled) {
-        storage->getScalaFile()->loadScalaScale(&fullState.scalaScaleConfig);
+    // Did we really change bank?
+    if (fullState.scalaScaleConfig.scalaFile != storage->getScalaFile()->getFile(scaleNumber)) {
+        fullState.scalaScaleConfig.scalaFile = storage->getScalaFile()->getFile(scaleNumber);
+        if (fullState.scalaScaleConfig.scalaFile->fileType != FILE_EMPTY && fullState.scalaScaleConfig.scalaEnabled) {
+            storage->getScalaFile()->loadScalaScale(&fullState.scalaScaleConfig);
+        }
     }
 }
 
